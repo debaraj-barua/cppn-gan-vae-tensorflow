@@ -15,7 +15,7 @@ def make_img_data_array(z_array_input, sinusoid = True, fps=24, x_dim = 1080, y_
   n = len(z_array)
   data = []
   for i in range(n-1):
-    print "Morphing Image #", i
+    print("Morphing Image #", i)
     sampler.show_image_from_z(z_array[i])
     data.append(sampler.morph(z_array[i], z_array[i+1], fps, sinusoid = sinusoid, x_dim = x_dim, y_dim = y_dim))
   sampler.show_image_from_z(z_array[n-1])
