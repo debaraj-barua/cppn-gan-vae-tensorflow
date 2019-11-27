@@ -1,13 +1,16 @@
 import os
 import time
 import numpy as np
-import tensorflow as tf
+#import tensorflow as tf
+import tensorflow.compat.v1 as tf
+tf.disable_v2_behavior()
 from ops import *
 
 '''
 cppgan-vae
 
-compositional pattern-producing generative adversarial network combined with variational autoencoder
+compositional pattern-producing generative adversarial network combined with 
+variational autoencoder
 
 I learned a lot from studying the below pages:
 
@@ -25,8 +28,10 @@ https://en.wikipedia.org/wiki/Compositional_pattern-producing_network
 class CPPNVAE():
   def __init__(self, batch_size=1, z_dim=32,
                 x_dim = 26, y_dim = 26, c_dim = 1, scale = 8.0,
-                learning_rate= 0.01, learning_rate_d= 0.001, learning_rate_vae = 0.0001, beta1 = 0.9, net_size_g = 128, net_depth_g = 4,
-                net_size_q = 512, keep_prob = 1.0, df_dim = 24, model_name = "cppnvae"):
+                learning_rate= 0.01, learning_rate_d= 0.001, 
+                learning_rate_vae = 0.0001, beta1 = 0.9, net_size_g = 128, 
+                net_depth_g = 4, net_size_q = 512, keep_prob = 1.0, 
+                df_dim = 24, model_name = "cppnvae"):
     """
 
     Args:
@@ -36,15 +41,20 @@ class CPPNVAE():
     learning_rate       learning rate for the generator
                   _d    learning rate for the discriminiator
                   _vae  learning rate for the variational autoencoder
-    net_size_g          number of activations per layer for cppn generator function
+    net_size_g          number of activations per layer for cppn generator 
+                        function
     net_depth_g         depth of generator
-    net_size_q          number of activations per layer for decoder (real image -> z). 2 layers.
-    df_dim              discriminiator is a convnet.  higher -> more activtions -> smarter.
+    net_size_q          number of activations per layer for decoder 
+                        (real image -> z). 2 layers.
+    df_dim              discriminiator is a convnet.  
+                        higher -> more activtions -> smarter.
     keep_prob           dropout probability
 
-    when training, use I used dropout on training the decoder, batch norm on discriminator, nothing on cppn
-    choose training parameters so that over the long run, decoder and encoder log errors hover around 0.7 each (so they are at the same skill level)
-    while the error for vae should slowly move lower over time with D and G balanced.
+    when training, use I used dropout on training the decoder, batch norm on 
+    discriminator, nothing on cppn choose training parameters so that over the 
+    long run, decoder and encoder log errors hover around 0.7 each (so they are
+    at the same skill level) while the error for vae should slowly move lower 
+    over time with D and G balanced.
 
     """
 
@@ -91,37 +101,51 @@ class CPPNVAE():
     self.z_mean, self.z_log_sigma_sq = self.encoder()
 
     # Draw one sample z from Gaussian distribution
-    eps = tf.random_normal((self.batch_size, self.z_dim), 0, 1, dtype=tf.float32)
+    eps = tf.random_normal((self.batch_size, self.z_dim), 0, 1, dtype=
+            tf.float32)
     # z = mu + sigma*epsilon
-    self.z = tf.add(self.z_mean, tf.mul(tf.sqrt(tf.exp(self.z_log_sigma_sq)), eps))
+    self.z = tf.add(self.z_mean, tf.multiply(tf.sqrt(tf.exp(
+        self.z_log_sigma_sq)), eps))
 
     # Use generator to determine mean of
     # Bernoulli distribution of reconstructed input
     self.G = self.generator()
     self.batch_reconstruct_flatten = tf.reshape(self.G, [batch_size, -1])
 
-    self.D_right = self.discriminator(self.batch) # discriminiator on correct examples
-    self.D_wrong = self.discriminator(self.G, reuse=True) # feed generated images into D
+    self.D_right = self.discriminator(
+            self.batch) # discriminiator on correct examples
+    self.D_wrong = self.discriminator(
+            self.G, reuse=True) # feed generated images into D
 
     self.create_vae_loss_terms()
     self.create_gan_loss_terms()
 
-    self.balanced_loss = 1.0 * self.g_loss + 1.0 * self.vae_loss # can try to weight these.
+    self.balanced_loss = 1.0 * self.g_loss + \
+        1.0 * self.vae_loss # can try to weight these.
 
     self.t_vars = tf.trainable_variables()
 
-    self.q_vars = [var for var in self.t_vars if (self.model_name+'_q_') in var.name]
-    self.g_vars = [var for var in self.t_vars if (self.model_name+'_g_') in var.name]
-    self.d_vars = [var for var in self.t_vars if (self.model_name+'_d_') in var.name]
+    self.q_vars = [var for var in self.t_vars if (
+        self.model_name+'_q_') in var.name]
+    self.g_vars = [var for var in self.t_vars if (
+        self.model_name+'_g_') in var.name]
+    self.d_vars = [var for var in self.t_vars if (
+        self.model_name+'_d_') in var.name]
     self.vae_vars = self.q_vars+self.g_vars
 
     # Use ADAM optimizer
-    self.d_opt = tf.train.AdamOptimizer(self.learning_rate_d, beta1=self.beta1) \
-                      .minimize(self.d_loss, var_list=self.d_vars)
-    self.g_opt = tf.train.AdamOptimizer(self.learning_rate, beta1=self.beta1) \
-                      .minimize(self.balanced_loss, var_list=self.vae_vars)
-    self.vae_opt = tf.train.AdamOptimizer(self.learning_rate_vae, beta1=self.beta1) \
-                      .minimize(self.vae_loss, var_list=self.vae_vars)
+    with tf.variable_scope("discriminator") as scope: 
+        self.d_opt = tf.train.AdamOptimizer(self.learning_rate_d,
+                beta1=self.beta1).minimize(self.d_loss, var_list=self.d_vars)
+    
+    with tf.variable_scope("generator") as scope: 
+        self.g_opt =  tf.train.AdamOptimizer(self.learning_rate,
+                beta1=self.beta1).minimize(self.balanced_loss, 
+                var_list=self.g_vars)
+    with tf.variable_scope("vae") as scope:     
+        self.vae_opt = tf.train.AdamOptimizer(self.learning_rate_vae, 
+                beta1=self.beta1).minimize(self.vae_loss,
+                var_list=self.vae_vars)
 
     # Initializing the tensor flow variables
     init = tf.initialize_all_variables()
@@ -198,47 +222,47 @@ class CPPNVAE():
     return (z_mean, z_log_sigma_sq)
 
   def discriminator(self, image, reuse=False):
+    with tf.variable_scope("discriminator") as scope: 
+        if reuse:
+            scope.reuse_variables()
 
-    if reuse:
-        tf.get_variable_scope().reuse_variables()
+        h0 = lrelu(conv2d(image, self.df_dim, name=self.model_name+'_d_h0_conv'))
+        h1 = lrelu(self.d_bn1(conv2d(h0, self.df_dim*2, name=self.model_name+'_d_h1_conv')))
+        h2 = lrelu(self.d_bn2(conv2d(h1, self.df_dim*4, name=self.model_name+'_d_h2_conv')))
+        h3 = linear(tf.reshape(h2, [self.batch_size, -1]), 1, self.model_name+'_d_h2_lin')
 
-    h0 = lrelu(conv2d(image, self.df_dim, name=self.model_name+'_d_h0_conv'))
-    h1 = lrelu(self.d_bn1(conv2d(h0, self.df_dim*2, name=self.model_name+'_d_h1_conv')))
-    h2 = lrelu(self.d_bn2(conv2d(h1, self.df_dim*4, name=self.model_name+'_d_h2_conv')))
-    h3 = linear(tf.reshape(h2, [self.batch_size, -1]), 1, self.model_name+'_d_h2_lin')
-
-    return tf.nn.sigmoid(h3)
+        return tf.nn.sigmoid(h3)
 
   def generator(self, gen_x_dim = 26, gen_y_dim = 26, reuse = False):
+     with tf.variable_scope("generator") as scope: 
+        if reuse:
+           scope.reuse_variables()
 
-    if reuse:
-        tf.get_variable_scope().reuse_variables()
+        n_network = self.net_size_g
+        gen_n_points = gen_x_dim * gen_y_dim
 
-    n_network = self.net_size_g
-    gen_n_points = gen_x_dim * gen_y_dim
+        z_scaled = tf.reshape(self.z, [self.batch_size, 1, self.z_dim]) * \
+                        tf.ones([gen_n_points, 1], dtype=tf.float32) * self.scale
+        z_unroll = tf.reshape(z_scaled, [self.batch_size*gen_n_points, self.z_dim])
+        x_unroll = tf.reshape(self.x, [self.batch_size*gen_n_points, 1])
+        y_unroll = tf.reshape(self.y, [self.batch_size*gen_n_points, 1])
+        r_unroll = tf.reshape(self.r, [self.batch_size*gen_n_points, 1])
 
-    z_scaled = tf.reshape(self.z, [self.batch_size, 1, self.z_dim]) * \
-                    tf.ones([gen_n_points, 1], dtype=tf.float32) * self.scale
-    z_unroll = tf.reshape(z_scaled, [self.batch_size*gen_n_points, self.z_dim])
-    x_unroll = tf.reshape(self.x, [self.batch_size*gen_n_points, 1])
-    y_unroll = tf.reshape(self.y, [self.batch_size*gen_n_points, 1])
-    r_unroll = tf.reshape(self.r, [self.batch_size*gen_n_points, 1])
+        U = fully_connected(z_unroll, n_network, self.model_name+'_g_0_z') + \
+            fully_connected(x_unroll, n_network, self.model_name+'_g_0_x', with_bias = False) + \
+            fully_connected(y_unroll, n_network, self.model_name+'_g_0_y', with_bias = False) + \
+            fully_connected(r_unroll, n_network, self.model_name+'_g_0_r', with_bias = False)
 
-    U = fully_connected(z_unroll, n_network, self.model_name+'_g_0_z') + \
-        fully_connected(x_unroll, n_network, self.model_name+'_g_0_x', with_bias = False) + \
-        fully_connected(y_unroll, n_network, self.model_name+'_g_0_y', with_bias = False) + \
-        fully_connected(r_unroll, n_network, self.model_name+'_g_0_r', with_bias = False)
+        H = tf.nn.softplus(U)
 
-    H = tf.nn.softplus(U)
+        for i in range(1, self.net_depth_g):
+          H = tf.nn.tanh(fully_connected(H, n_network, self.model_name+'_g_tanh_'+str(i)))
 
-    for i in range(1, self.net_depth_g):
-      H = tf.nn.tanh(fully_connected(H, n_network, self.model_name+'_g_tanh_'+str(i)))
+        output = tf.sigmoid(fully_connected(H, self.c_dim, self.model_name+'_g_'+str(self.net_depth_g)))
 
-    output = tf.sigmoid(fully_connected(H, self.c_dim, self.model_name+'_g_'+str(self.net_depth_g)))
+        result = tf.reshape(output, [self.batch_size, gen_y_dim, gen_x_dim, self.c_dim])
 
-    result = tf.reshape(output, [self.batch_size, gen_y_dim, gen_x_dim, self.c_dim])
-
-    return result
+        return result
 
 
   def partial_train(self, batch):
@@ -318,11 +342,10 @@ class CPPNVAE():
   def load_model(self, checkpoint_path):
 
     ckpt = tf.train.get_checkpoint_state(checkpoint_path)
-    print "loading model: ",ckpt.model_checkpoint_path
-
-    self.saver.restore(self.sess, checkpoint_path+'/'+ckpt.model_checkpoint_path)
+    print("loading model: ",ckpt.model_checkpoint_path)
+    #self.saver.restore(self.sess, checkpoint_path+'/'+ckpt.model_checkpoint_path)
     # use the below line for tensorflow 0.7
-    #self.saver.restore(self.sess, ckpt.model_checkpoint_path)
+    self.saver.restore(self.sess, ckpt.model_checkpoint_path)
 
   def close(self):
     self.sess.close()

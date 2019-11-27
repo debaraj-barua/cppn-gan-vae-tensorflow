@@ -22,7 +22,10 @@ sampler = Sampler()
 '''
 
 import numpy as np
-import tensorflow as tf
+#import tensorflow as tf
+import tensorflow.compat.v1 as tf
+tf.disable_v2_behavior()
+
 import math
 import random
 import PIL
@@ -34,8 +37,8 @@ import images2gif
 from images2gif import writeGif
 
 mgc = get_ipython().magic
-mgc(u'matplotlib inline')
-mgc(u'run -i mnist_data.py')
+mgc('matplotlib inline')
+mgc('run -i mnist_data.py')
 pylab.rcParams['figure.figsize'] = (10.0, 10.0)
 
 class Sampler():
@@ -132,7 +135,7 @@ class Sampler():
       if sinusoid == True:
         factor = np.sin(percentage*np.pi/2)
       z = z1 + diff_z*factor
-      print "processing image ", i
+      print("processing image ", i)
       img_data_array.append(self.generate(z, x_dim, y_dim, scale))
     return img_data_array
   def save_anim_gif(self, img_data_array, filename, duration = 0.1):
